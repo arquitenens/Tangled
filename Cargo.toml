@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "src/app",
+    "src/core_types",
+    "src/Tangled",
+    "src/Config",
+]

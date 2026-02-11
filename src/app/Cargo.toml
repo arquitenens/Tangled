@@ -1,0 +1,9 @@
+[package]
+name = "app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+core_types = { path = "../core_types" }
+tangled    = { path = "../Tangled" }
+config     = { path = "../Config" }
