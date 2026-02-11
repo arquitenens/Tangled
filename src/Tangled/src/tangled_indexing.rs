@@ -12,6 +12,10 @@ pub(crate) struct TangledIndex<T>{
 }
 impl<T> TangledIndex<T> {
     pub(crate) fn new() -> Self {
-        todo!()
+        Self{
+            pointers: Vec::new(),
+            prefix_vec: Vec::new(),
+            last_index: 0,
+        }
     }
 }

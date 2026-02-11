@@ -1,4 +1,4 @@
-use std::sync::mpsc::Sender;
+use crossbeam_channel::Sender;
 use crate::tangled_inner::TangledInner;
 
 pub(crate) enum IndexType{

@@ -3,6 +3,7 @@ use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::iter::Once;
 use std::ptr::NonNull;
+use std::thread::JoinHandle;
 use crate::tangled_inner::TangledInner;
 use config::config::{Config, ConfigInner};
 use crate::borrow::{BorrowedTangled, MutBorrowedTangled};
@@ -21,6 +22,7 @@ pub(crate) struct TangledHandle<T>{
 #[derive(Debug)]
 pub struct Tangled<T>{
     pub inners: Vec<TangledInner<T>>,
+    handles: Vec<JoinHandle<()>>,
     //cached vectors
     cached: HashMap<usize, Vec<T>>,
 
@@ -33,14 +35,14 @@ pub struct Tangled<T>{
 }
 
 
-impl<T> Default for Tangled<T> {
+impl<T: 'static> Default for Tangled<T> {
     fn default() -> Self {
         return Tangled::new(Config::default())
     }
 }
 
 
-impl<T> Tangled<T> {
+impl<T: 'static> Tangled<T> {
     pub fn new(config: Config<T>) -> Self{
         let (sender, receiver) = unbounded();
         return Self {
@@ -48,6 +50,7 @@ impl<T> Tangled<T> {
             borrow_state: UnsafeCell::new(HashMap::new()),
             indexing: TangledIndex::new(),
             inners: Vec::new(),
+            handles: Vec::new(),
             receiver,
             sender: TangledHandle{cmd_tx: sender},
             global_config: config
@@ -55,36 +58,37 @@ impl<T> Tangled<T> {
     }
 
     pub fn add_child(&mut self) {
-            let mut inner = TangledInner::new(ConfigInner::default());
-            inner.parent = NonNull::from_ref(&self);
+            let inner = TangledInner::new(ConfigInner::default(), self.sender.cmd_tx.clone());
             self.inners.push(inner);
     }
 
-    pub fn handle_request(&mut self){
-        let command = match self.receiver.recv(){
-            Ok(command) => {
-                command
-            },
-            Err(_) => return,
-        };
-        match command {
-            TangledCommands::Get { index: index, reply: reply } => {
-                println!("hi");
-                reply.send(None).expect("TODO: panic message");
-            },
-            TangledCommands::RawIndex(rough, direct) => {
-                todo!()
+    pub fn start(&mut self) -> JoinHandle<()> {
+        
+        let receiver = self.receiver.clone();
+        let handle = std::thread::spawn(move ||{
+            loop {
+                let receiver_result = receiver.recv();
+                let Ok(receiver) = receiver_result else { return; };
+                    match receiver {
+                        TangledCommands::Get { index: index, reply: reply } => {
+                            reply.send(None).expect("TODO: panic message");
+                        },
+                        TangledCommands::RawIndex(rough, direct) => {
+                            todo!()
+                        }
+                        TangledCommands::Write(index, value) => {
+                            todo!()
+                        },
+                        TangledCommands::Drop(index) => {
+                            todo!()
+                        }
+                        TangledCommands::GetVec(index) => {
+                            todo!()
+                        },
+                    }
             }
-            TangledCommands::Write(index, value) => {
-                todo!()
-            },
-            TangledCommands::Drop(index) => {
-                todo!()
-            }
-            TangledCommands::GetVec(index) => {
-                todo!()
-            }
-        }
+        });
+        return handle;
     }
 }
 

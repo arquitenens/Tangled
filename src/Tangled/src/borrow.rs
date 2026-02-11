@@ -1,5 +1,5 @@
 use std::sync::mpsc;
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use crate::tangled::Tangled;
 use crate::commands::{IndexType, TangledCommands};
 use crate::handle::RefHandle;
@@ -15,15 +15,23 @@ impl<'b, T> BorrowedTangled<'b, T> {
     }
 
     pub(crate) fn get_sender(&self) -> Sender<TangledCommands<T>>{
-        unsafe {
-            self.inner.parent.as_ref().sender.cmd_tx.clone()
-        }
+        self.inner.parent_receiver.clone()
     }
 
-    pub fn get(&self, index: usize) -> Receiver<Option<T>> {
+    pub fn get(&self, index: usize) -> Option<T> {
         let sender = self.get_sender();
-        println!("sender : {:?}", sender);
-        todo!()
+        let (tx, rx) = unbounded::<Option<T>>();
+        let command = TangledCommands::Get {
+            index: IndexType::Direct(index),
+            reply: tx
+        };
+        sender.send(command).expect("failed to send message");
+        let reply = match rx.recv(){
+            Ok(reply) => reply,
+            Err(_) => None
+        };
+        return reply
+
     }
 }
 pub struct MutBorrowedTangled<'b, T>{

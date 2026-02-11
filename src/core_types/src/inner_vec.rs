@@ -6,6 +6,5 @@ type InnerVec<T> = ManuallyDrop<NonNull<UnsafeCell<Box<Vec<T>>>>>;
 pub struct InnerVecWrapper<T> {
     inner: InnerVec<T>,
 }
-unsafe impl<T> Sync for InnerVecWrapper<T>{
-    //time for fun!
-}
+
+unsafe impl<T> Send for InnerVecWrapper<T>{}

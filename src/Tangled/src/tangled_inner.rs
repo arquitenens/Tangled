@@ -10,19 +10,19 @@ use core_types::borrow_state::BorrowState;
 use crate::borrow::{BorrowedTangled, MutBorrowedTangled};
 use crate::commands::TangledCommands;
 use crate::tangled::Tangled;
-
+use crate::tangled::TangledHandle;
 
 
 #[derive(Debug)]
 pub struct TangledInner<T>{
-    pub(crate) parent: NonNull<Tangled<T>>,
     
     //internal data
     data: Vec<T>,
-    
+
     total_elements: usize,
 
     pub(crate) sender: Sender<TangledCommands<T>>,
+    pub(crate) parent_receiver: Sender<TangledCommands<T>>,
     pub(crate) receiver: Receiver<TangledCommands<T>>,
 
     per_config: ConfigInner<T>
@@ -31,13 +31,13 @@ pub struct TangledInner<T>{
 
 
 impl<T> TangledInner<T>{
-    pub(crate) fn new(per_config: ConfigInner<T>) -> Self{
+    pub(crate) fn new(per_config: ConfigInner<T>, send_to: Sender<TangledCommands<T>>) -> Self{
         let (sender, receiver) = unbounded();
         return Self{
-            parent: NonNull::dangling(),
             data: Vec::new(),
             sender,
             receiver,
+            parent_receiver: send_to,
             total_elements: 0,
             per_config,
         };
@@ -50,7 +50,6 @@ impl<T> TangledInner<T>{
     pub fn borrow_mut(&mut self) -> MutBorrowedTangled<'_, T>{
         MutBorrowedTangled::new(self)
     }
-
-
 }
 
+unsafe impl<T> Send for TangledInner<T>{}
