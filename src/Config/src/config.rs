@@ -5,7 +5,7 @@ use core_types::request_loop::*;
 #[derive(Debug)]
 pub struct Config<T>{
     loop_type: WakeType,
-    thread_count: usize, //sender threads
+    max_thread_count: usize,
     inner: ConfigInner<T>
 }
 
@@ -14,7 +14,7 @@ impl<T> Default for Config<T>{
     fn default() -> Self{
         return Self{
             loop_type: WakeType::default(),
-            thread_count: 2,
+            max_thread_count: std::thread::available_parallelism().unwrap().get(),
             inner: ConfigInner::default(),
         }
     }
@@ -23,7 +23,7 @@ impl<T> Config<T>{
     pub fn new(thread_count: usize, flavor: IndexingMode, loop_type: WakeType) -> Self{
         return Self{
             loop_type,
-            thread_count,
+            max_thread_count: std::thread::available_parallelism().unwrap().get(),
             inner: ConfigInner::new(flavor),
         }
     }
