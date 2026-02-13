@@ -3,7 +3,7 @@ enum PrintingError{
 }
 
 fn optimized_string_printing(string: &str) -> Result<String, PrintingError> {
-    let string = ManuallyDrop::new(Pin::new(Box::new(String::from(string))));
+    let string = ManuallyDrop::new(Box::new(String::from(string)));
     //SAFETY: it's a box so its stable on the heap!
     let ptr_tup = ((&string as *const _) as *const &[u8], string.len());
     let (x, _): (&*const &[u8], usize) = unsafe { std::mem::transmute_copy(&ptr_tup) };
