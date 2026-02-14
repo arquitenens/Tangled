@@ -1,6 +1,7 @@
 use crossbeam_channel::Sender;
 use crate::tangled_inner::TangledInner;
 
+#[derive(Debug)]
 pub(crate) enum IndexType{
     Rough(usize),
     Direct(usize),
@@ -37,14 +38,21 @@ pub(crate) enum TangledCommands<T>{
 
     //rough index
     GetVec(IndexType),
+    InsertVec(IndexType),
     Drop(IndexType),
 
     //misc
     Sync,
     Push{
         value: T,
+        request_requirements: RequestRequirements,
+        //reply: Sender<Option<T>>
+    },
+    PushVec{
+        value: Vec<T>,
         request_requirements: RequestRequirements
     },
+    PrintData,
 }
 
 unsafe impl<T> Send for TangledCommands<T>{}

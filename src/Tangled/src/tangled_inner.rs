@@ -18,13 +18,13 @@ pub struct TangledInner<T>{
     //internal data
     pub(crate) data: Vec<T>,
 
-    total_elements: usize,
+    pub(crate) total_elements: usize,
 
     pub(crate) sender: Sender<TangledCommands<T>>,
     pub(crate) parent_receiver: Sender<TangledCommands<T>>,
     pub(crate) receiver: Receiver<TangledCommands<T>>,
 
-    per_config: ConfigInner<T>
+    pub(crate) per_config: ConfigInner<T>
 }
 
 
@@ -41,7 +41,7 @@ impl<T> TangledInner<T>{
             per_config,
         };
     }
-    
+
 }
 
 unsafe impl<T> Send for TangledInner<T>{}

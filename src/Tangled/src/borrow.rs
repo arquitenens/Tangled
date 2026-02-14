@@ -37,6 +37,13 @@ impl<'outer, T> BorrowedWorker<'outer, T> {
         let reply = handle_reply(rx);
         return reply
     }
+    pub fn print(&self) {
+        let sender = self.get_sender();
+        let (tx, rx) = unbounded::<Option<T>>();
+        let command: TangledCommands<T> = TangledCommands::PrintData;
+        sender.send(command).expect("failed to send message");
+        let _ = handle_reply(rx);
+    }
 }
 pub struct MutBorrowedWorker<'outer, T>{
     inner: &'outer mut Worker<T>,
@@ -56,10 +63,16 @@ impl<'outer, T> MutBorrowedWorker<'outer, T> {
         let parent = self.inner.get_methods();
         let command = TangledCommands::Push {
             value,
-            request_requirements: RequestRequirements::None
+            request_requirements: RequestRequirements::None,
+            //reply: tx
         };
         sender.send(command).expect("failed to send message");
-        let _ = handle_reply(rx);
-
+        //let _ = handle_reply(rx);
+    }
+    pub fn print(&self) {
+        let sender = self.get_sender();
+        let (tx, rx) = unbounded::<Option<T>>();
+        let command: TangledCommands<T> = TangledCommands::PrintData;
+        sender.send(command).expect("failed to send message");
     }
 }

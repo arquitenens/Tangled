@@ -11,6 +11,7 @@ use crate::commands::IndexType;
 use crossbeam_channel::unbounded;
 use crossbeam_channel::{Sender, Receiver};
 use core_types::borrow_state::BorrowState;
+use core_types::indexing_mode::IndexingMode;
 use core_types::inner_vec::InnerVecWrapper;
 use crate::tangled_indexing::TangledIndex;
 use crate::worker::Worker;
@@ -27,7 +28,8 @@ pub struct Tangled<T>{
     cached: HashMap<usize, Vec<T>>,
 
     //check the borrow state of a pointer
-    borrow_state: UnsafeCell<HashMap<InnerVecWrapper<T>, (BorrowState, usize)>>, //usize is the index in the pointer_vec
+    //usize is the index in the pointer_vec
+    borrow_state: UnsafeCell<HashMap<InnerVecWrapper<T>, (BorrowState, usize)>>,
     pub(crate) indexing: TangledIndex<T>,
     pub(crate) receiver: Receiver<TangledCommands<T>>,
     pub(crate) sender: TangledHandle<T>,
@@ -50,7 +52,7 @@ impl<T: Send + 'static + Clone + std::fmt::Debug> Tangled<T> {
         return Self {
             cached: HashMap::new(),
             borrow_state: UnsafeCell::new(HashMap::new()),
-            indexing: TangledIndex::new(),
+            indexing: TangledIndex::new(IndexingMode::AppendHeavy),
             inners: Vec::new(),
             handles: Vec::new(),
             receiver,
@@ -83,19 +85,30 @@ impl<T: Send + 'static + Clone + std::fmt::Debug> Tangled<T> {
                 let Ok(receiver) = receiver_result else { return; };
                     match receiver {
                         TangledCommands::Get { index: index, reply, request_requirements} => {
-                            let some_value = self.inners[0].data.get(0).cloned();
+                            let some_value = None;
+
                             reply.send(some_value).expect("TODO: panic message");
                         },
                         TangledCommands::Push{value, request_requirements} => {
-                            if self.inners.is_empty() {
-                                let new = TangledInner::new(ConfigInner::default(), self.sender.cmd_tx.clone());
-                                self.inners.push(new);
-                                self.inners.last_mut().unwrap().data.push(value);
+                            let last_index = self.indexing.last_index;
+                            let (rough, _) = self.indexing.flat_to_indextype(last_index);
+                            if let IndexType::Rough(rough) = rough{
+                                let inner_vec = &mut self.inners[rough];
                                 self.indexing.last_index += 1;
-                            }else {
-                                self.inners.last_mut().unwrap().data.push(value);
-                                println!("self.inners: {:?}", self.inners.last_mut().unwrap());
-                                self.indexing.last_index += 1;
+                                inner_vec.total_elements += 1;
+                                inner_vec.data.push(value);
+                            }
+                            
+
+                        }
+                        TangledCommands::PushVec {value, request_requirements} => {
+                            let last_index = self.indexing.last_index;
+                            let (rough, _) = self.indexing.flat_to_indextype(last_index);
+                            if let IndexType::Rough(rough) = rough{
+                                let inner_vec = &mut self.inners[rough];
+                                self.indexing.last_index += value.len();
+                                inner_vec.total_elements += value.len();
+                                inner_vec.data.extend(value);
                             }
                         }
 
@@ -113,6 +126,11 @@ impl<T: Send + 'static + Clone + std::fmt::Debug> Tangled<T> {
                         },
                         TangledCommands::Sync => {
                             todo!()
+                        },
+                        TangledCommands::InsertVec(_) => todo!(),
+                        TangledCommands::PrintData => {
+                            let data = &self.inners;
+                            println!("data: {:#?}", data);
                         }
                     }
             }
