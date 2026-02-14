@@ -12,6 +12,7 @@ fn handle_reply<V>(rx: Receiver<Option<V>>) -> Option<V> {
     return reply
 }
 
+#[repr(transparent)]
 pub struct BorrowedWorker<'outer, T> {
     inner: &'outer Worker<T>,
 }
@@ -45,6 +46,7 @@ impl<'outer, T> BorrowedWorker<'outer, T> {
         let _ = handle_reply(rx);
     }
 }
+#[repr(transparent)]
 pub struct MutBorrowedWorker<'outer, T>{
     inner: &'outer mut Worker<T>,
 }

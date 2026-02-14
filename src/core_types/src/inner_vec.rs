@@ -3,6 +3,7 @@ use std::mem::ManuallyDrop;
 use std::ptr::NonNull;
 type InnerVec<T> = ManuallyDrop<NonNull<UnsafeCell<Box<Vec<T>>>>>;
 #[derive(Debug)]
+#[repr(transparent)]
 pub struct InnerVecWrapper<T> {
     inner: InnerVec<T>,
 }

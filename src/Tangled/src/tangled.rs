@@ -17,6 +17,7 @@ use crate::tangled_indexing::TangledIndex;
 use crate::worker::Worker;
 
 #[derive(Debug)]
+#[repr(transparent)]
 pub(crate) struct TangledHandle<T>{
     pub(crate) cmd_tx: Sender<TangledCommands<T>>,
 }
