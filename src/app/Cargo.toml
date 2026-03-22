@@ -1,9 +1,11 @@
 [package]
 name = "app"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+resolver = "3"
 
 [dependencies]
 core_types = { path = "../core_types" }
 tangled    = { path = "../Tangled" }
 config     = { path = "../Config" }
+tangled_single = {path = "../SingleTangled"}

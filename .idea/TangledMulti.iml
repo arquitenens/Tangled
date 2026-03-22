@@ -10,6 +10,7 @@
       <sourceFolder url="file://$MODULE_DIR$/src/tangled_crate/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/Config/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/app/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/SingleTangled/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/src/Config/target" />
       <excludeFolder url="file://$MODULE_DIR$/src/Tangled/target" />
       <excludeFolder url="file://$MODULE_DIR$/src/app/target" />

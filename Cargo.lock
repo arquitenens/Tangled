@@ -9,6 +9,7 @@ dependencies = [
  "config",
  "core_types",
  "tangled",
+ "tangled_single",
 ]
 
 [[package]]
@@ -71,3 +72,7 @@ dependencies = [
  "crossbeam-channel",
  "indexmap",
 ]
+
+[[package]]
+name = "tangled_single"
+version = "0.1.0"

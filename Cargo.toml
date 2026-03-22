@@ -4,4 +4,7 @@ members = [
     "src/core_types",
     "src/Tangled",
     "src/Config",
+    "src/SingleTangled",
 ]
+resolver = "3"
+
