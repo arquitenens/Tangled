@@ -7,3 +7,4 @@ edition = "2024"
 core_types = { path = "../core_types" }
 config     = { path = "../Config" }
 crossbeam-channel = "0.5"
+indexmap = "2.13.0"

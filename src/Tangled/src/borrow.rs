@@ -1,7 +1,8 @@
 use std::sync::mpsc;
+use std::time::Instant;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use crate::tangled::Tangled;
-use crate::commands::{IndexType, RequestRequirements, TangledCommands};
+use crate::commands::{IndexType, RequestRequirements, TangledCommands, ReqOrder};
 use crate::handle::RefHandle;
 use crate::tangled::TangledHandle;
 use crate::tangled_inner::TangledInner;
@@ -33,6 +34,7 @@ impl<'outer, T> BorrowedWorker<'outer, T> {
             index: IndexType::Direct(index),
             reply: tx,
             request_requirements: RequestRequirements::None,
+            order: ReqOrder::Strict(Instant::now()),
         };
         sender.send(command).expect("failed to send message");
         let reply = handle_reply(rx);
@@ -66,6 +68,7 @@ impl<'outer, T> MutBorrowedWorker<'outer, T> {
         let command = TangledCommands::Push {
             value,
             request_requirements: RequestRequirements::None,
+            order: ReqOrder::Strict(Instant::now()),
             //reply: tx
         };
         sender.send(command).expect("failed to send message");
