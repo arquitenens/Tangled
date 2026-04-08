@@ -36,6 +36,15 @@ pub struct Tangled<T>{
     prefix_vec: Vec<usize>,
 
 }
+impl<T> Drop for Tangled<T> {
+    fn drop(&mut self) {
+        for slot in self.pointers.iter_mut() {
+            if let Some(ptr) = slot.take() {
+                unsafe { drop(Box::from_raw(ptr.as_ptr())); }
+            }
+        }
+    }
+}
 
 pub struct BorrowedTangled<'t, T>{
     inner: &'t Tangled<T>
@@ -362,21 +371,28 @@ impl<T> Drop for RefHandle<'_, T> {
             BorrowState::Shared(0) => {
                 unsafe {
                     let p = self.parent.as_mut();
-                    let (_, i) = unsafe {&*p.borrow_state.get()}.get(&self.ptr).unwrap();
+                    let idx = unsafe {&mut *p.borrow_state.get_mut()}.get_mut(&self.ptr).unwrap().1;
+                    p.borrow_state.get_mut().insert(self.ptr, (BorrowState::Shared(0), idx));
                     {
                         unsafe { let _ = Box::from_raw(self.ptr.as_ptr()); }
                     }
-                    p.pointers[*i] = None;}
+                    p.pointers[idx] = None;}
             },
 
             BorrowState::Shared(x) => {
                 self.state = BorrowState::Shared(&x-1);
-
                 let p = unsafe {self.parent.as_mut()};
-                let (_, i) = unsafe {&*p.borrow_state.get()}.get(&self.ptr).unwrap();
+                let raw = p.borrow_state.get_mut();
+                let (state, idx) = raw.get(&self.ptr).unwrap();
 
-                if x - 1 == 0{
-                    p.pointers[*i] = None;
+                let shared = match state {
+                    BorrowState::Shared(x) => *x,
+                    _ => unreachable!(),
+                };
+                let idx = *idx;
+                raw.insert(self.ptr, (BorrowState::Shared(shared - 1), idx));
+                if shared - 1 == 0{
+                    p.pointers[idx] = None;
                     {
                         unsafe { let _ = Box::from_raw(self.ptr.as_ptr()); }
                     }
@@ -490,7 +506,7 @@ impl<T> Tangled<T>{
         }
 
         let target = index + 1;
-        let rough_index = self.prefix_vec.partition_point(|&x| x < target) - 1;
+        let rough_index = self.prefix_vec.partition_point(|&x| x < target);
 
 
         if rough_index >= self.total_elements{
@@ -542,7 +558,7 @@ impl<T: Debug> BorrowedTangled<'_, T>{
         let ptr_at_index = match self.inner.pointers.get(rough) {
             Some(Some(ptr)) => *ptr,
             None => return None,
-            _ => unreachable!()
+            _ => panic!("rough index out of bounds"),
         };
         let raw = self.inner.borrow_state.get();
 
