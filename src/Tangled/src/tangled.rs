@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use std::mem::{transmute, ManuallyDrop};
 use std::ptr::NonNull;
 use std::mem;
-use std::ops::{Deref, Index, IndexMut};
+use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::time::Instant;
 #[allow(unused)]
 
@@ -25,7 +25,7 @@ pub struct Tangled<T>{
     //check the borrow state of a pointer
     borrow_state: UnsafeCell<HashMap<InnerVec<T>, (BorrowState, usize)>>, //usize is the index in the pointer_vec
 
-    last_index: usize, //last index
+    last_index: usize,
 
     total_elements: usize,
 
@@ -62,34 +62,68 @@ pub struct MutBorrowedTangled<'t, T>{
 #[derive(Debug)]
 pub struct RefHandle<'a, T> {
     ptr: InnerVec<T>,
+    element: Option<NonNull<T>>,
     state: BorrowState,
     parent: NonNull<Tangled<T>>,
     _marker: PhantomData<&'a Tangled<T>>,
 }
 
-impl<'a, T: Debug> Deref for RefHandle<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        let inner = unsafe { self.parent.as_ref() };
-        let index = 0;
-        let len = inner.cached.len();
-        if index < len{
-            return inner.cached.get(index).unwrap();
-        }
-        let index = index - len;
-        println!("index: {:?}", index);
-        let (offset, rough_index) = inner.convert_index(index).unwrap();
-        println!("offset {}, rough_index {}", offset, rough_index);
-        return self.get_element(offset).unwrap();
+impl<'a, T> RefHandle<'a, T> {
+    #[inline]
+    fn parent_ref(&self) -> &Tangled<T> {
+        unsafe {&*self.parent.as_ref()}
+    }
+    #[inline]
+    fn parent_mut(&mut self) -> &mut Tangled<T> {
+        unsafe {self.parent.as_mut()}
     }
 }
 
 
+
+impl<'a, T: Debug> Deref for RefHandle<'a, T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        let single = self.element.is_some();
+        if single {
+            let element = self.element.unwrap_or_else(|| panic!("no element"));
+            let ptr = unsafe {element.as_ref()};
+            let single_slice = std::slice::from_ref(ptr);
+            return single_slice;
+        }else {
+            let ptr_raw = unsafe {&*self.ptr.as_ptr()};
+            let ptr = unsafe {&***ptr_raw.get()};
+            return ptr
+        }
+    }
+}
+
+impl<'a, T: Debug> DerefMut for RefHandle<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        let single = self.element.is_some();
+        if single {
+            let mut element = self.element.unwrap_or_else(|| panic!("no element"));
+            let ptr = unsafe {element.as_mut()};
+            let single_slice = std::slice::from_mut(ptr);
+            return single_slice;
+        }else {
+            let ptr_raw = unsafe {&mut *self.ptr.as_ptr()};
+            let ptr = &mut ***ptr_raw.get_mut();
+            return ptr
+        }
+
+    }
+}
+
+
+
+
 impl<'a, T: std::fmt::Debug> RefHandle<'a, T>  {
     fn get_element(&self, index: usize) -> Option<&'a T> {
+
         unsafe {
-            let parent = self.parent.as_ref();
+            let parent = &*self.parent.as_ref();
             let (in_vec, _) = parent.convert_index(index)?;
             let ptr = &self.ptr;
             let vec = ptr.as_ptr().as_mut()?.get_mut();
@@ -119,7 +153,6 @@ impl<T: std::fmt::Debug> Display for Tangled<T>{
 pub struct TangledIter<'a, T>{
     pos: (usize, usize),
     last_len: usize,
-    parent: &'a Tangled<T>,
     p_borrow: BorrowedTangled<'a, T>,
     unstable_iter: Vec<Option<InnerVec<T>>>,
     unstable_idx: Vec<usize>,
@@ -145,7 +178,6 @@ impl<'a, T> TangledIter<'a, T> {
             last_len: 0,
             unstable_idx: Vec::with_capacity(parent.total_elements),
             unstable_iter: Vec::with_capacity(parent.total_elements),
-            parent,
             p_borrow: parent.borrow(),
             _marker: PhantomData,
         }
@@ -275,11 +307,11 @@ impl<'p, T: Debug> Iterator for MutTangledIter<'p, T>{
 impl<'p, T> Iterator for TangledIter<'p, T>{
     type Item = &'p T;
     fn next(&mut self) -> Option<Self::Item> {
-        let prefix = &self.parent.prefix_vec;
+        let prefix = &self.p_borrow.inner.prefix_vec;
         let small = self.pos.0;
 
-        if self.last_len < self.parent.cached.len() || self.parent.prefix_vec.len() == 1 {
-            let x = self.parent.cached.get(self.last_len);
+        if self.last_len < self.p_borrow.inner.cached.len() || self.p_borrow.inner.prefix_vec.len() == 1 {
+            let x = self.p_borrow.inner.cached.get(self.last_len);
             self.last_len += 1;
             return x;
         }
@@ -314,7 +346,7 @@ impl<'p, T> Iterator for TangledIter<'p, T>{
 impl<T> Drop for RefHandle<'_, T> {
     fn drop(&mut self) {
         let old = mem::replace(&mut self.state, BorrowState::Shared(0));
-        println!("drop called! {:?}", old);
+        //println!("drop called! {:?}", old);
         match old {
             BorrowState::Exclusive => {
                 unsafe {
@@ -458,7 +490,8 @@ impl<T> Tangled<T>{
         }
 
         let target = index + 1;
-        let rough_index = self.prefix_vec.partition_point(|&x| x < target);
+        let rough_index = self.prefix_vec.partition_point(|&x| x < target) - 1;
+
 
         if rough_index >= self.total_elements{
             panic!("index out of bounds");
@@ -505,8 +538,8 @@ impl<T> Tangled<T>{
 }
 
 impl<T: Debug> BorrowedTangled<'_, T>{
-    fn get_handle(&self, index: usize) -> Option<RefHandle<'_, T>>{
-        let ptr_at_index = match self.inner.pointers.get(index) {
+    fn get_handle(&self, rough: usize, offset: Option<usize>) -> Option<RefHandle<'_, T>>{
+        let ptr_at_index = match self.inner.pointers.get(rough) {
             Some(Some(ptr)) => *ptr,
             None => return None,
             _ => unreachable!()
@@ -530,6 +563,14 @@ impl<T: Debug> BorrowedTangled<'_, T>{
         let ret = RefHandle{
             ptr: ptr_at_index,
             parent: NonNull::from(&*self.inner),
+            element: if offset.is_some(){
+                let raw_ptr = unsafe {ptr_at_index.as_ptr().as_mut().unwrap().get_mut()};
+                let idx = offset.unwrap();
+                let ptr = NonNull::from_ref(&raw_ptr[idx]);
+                Some(ptr)
+            }else {
+                None
+            },
             state: BorrowState::Shared(borrow_count + 1),
             _marker: PhantomData
         };
@@ -547,20 +588,18 @@ impl<T: Debug> BorrowedTangled<'_, T>{
         }
     }
 
-    pub fn read(&self, index: usize) -> Option<&T>  {
+    pub fn read(&self, index: usize) -> RefHandle<'_, T>  {
         let len = self.inner.cached.len();
-        if index < len{
-            return self.inner.cached.get(index);
-        }
         let index = index - len;
-        let (offset, rough_index) = self.inner.convert_index(index)?;
-        println!("offset {}, rough_index {}", offset, rough_index);
-        return if let Some(mut handle) = self.get_handle(rough_index){
-            handle.get_element(offset)
-        }else {
-            None
-        }
+        let (offset, rough_index) = self.inner.convert_index(index).unwrap();
+        self.get_handle(rough_index, Some(offset)).unwrap()
 
+    }
+    pub fn read_slice(&self, index: usize) -> RefHandle<'_, T>{
+        let len = self.inner.cached.len();
+        let index = index - len;
+        let (offset, rough_index) = self.inner.convert_index(index).unwrap();
+        self.get_handle(rough_index, None).unwrap()
     }
 }
 
@@ -588,8 +627,8 @@ impl<T: Debug> MutBorrowedTangled<'_, T> {
         self.inner.prefix_vec.push(len + last);
 
     }
-    fn get_mut_handle(&mut self, index: usize) -> Option<RefHandle<'_, T>>{
-        let ptr_at_index = match self.inner.pointers.get(index) {
+    fn get_mut_handle(&mut self, rough: usize, offset: Option<usize>) -> Option<RefHandle<'_, T>>{
+        let ptr_at_index = match self.inner.pointers.get(rough) {
             Some(Some(ptr)) => *ptr,
             None => return None,
             _ => unreachable!()
@@ -615,6 +654,14 @@ impl<T: Debug> MutBorrowedTangled<'_, T> {
             let ret = RefHandle{
                 ptr: ptr_at_index,
                 parent: NonNull::from(&*self.inner),
+                element: if offset.is_some(){
+                    let raw_ptr = unsafe {ptr_at_index.as_ptr().as_mut().unwrap().get_mut()};
+                    let idx = offset.unwrap();
+                    let ptr = NonNull::from_ref(&raw_ptr[idx]);
+                    Some(ptr)
+                }else {
+                    None
+                },
                 state: BorrowState::Exclusive,
                 _marker: PhantomData
             };
@@ -624,8 +671,8 @@ impl<T: Debug> MutBorrowedTangled<'_, T> {
         }
     }
 
-    pub fn get_handle(&self, index: usize) -> Option<RefHandle<'_, T>>{
-        let ptr_at_index = match self.inner.pointers.get(index) {
+    fn get_handle(&self, rough: usize, offset: Option<usize>) -> Option<RefHandle<'_, T>>{
+        let ptr_at_index = match self.inner.pointers.get(rough) {
             Some(Some(ptr)) => *ptr,
             None => return None,
             x => {
@@ -650,15 +697,29 @@ impl<T: Debug> MutBorrowedTangled<'_, T> {
 
 
         unsafe {&mut *raw}.insert(ptr_at_index, (BorrowState::Shared(&borrow_count + 1), index_copy));
+        if offset.is_some(){
+
+        }
+
         let ret = RefHandle{
             ptr: ptr_at_index,
             parent: NonNull::from(&*self.inner),
+            element: if offset.is_some(){
+                let raw_ptr = unsafe {ptr_at_index.as_ptr().as_mut().unwrap().get_mut()};
+                let idx = offset.unwrap();
+                let ptr = NonNull::from_ref(&raw_ptr[idx]);
+                Some(ptr)
+            }else {
+                None
+            },
             state: BorrowState::Shared(borrow_count + 1),
             _marker: PhantomData
         };
         return Some(ret);
     }
-    pub unsafe fn drop_vec(&mut self, ptr: ManuallyDrop<NonNull<UnsafeCell<Box<Vec<T>>>>>) -> Option<usize>{ //returns the index it was dropped at
+
+    //returns the index it was dropped at
+    pub unsafe fn drop_vec(&mut self, ptr: ManuallyDrop<NonNull<UnsafeCell<Box<Vec<T>>>>>) -> Option<usize>{
         let raw_borrow = self.inner.borrow_state.get_mut();
 
         match raw_borrow.get(&ptr) {
@@ -702,10 +763,12 @@ impl<T: Debug> MutBorrowedTangled<'_, T> {
                 panic!("vec is none!");
             }
         }else {
-            panic!("pointers empty");
+            self.push_vec(vec![val]);
         }
     }
 
+
+    //does not return a handle
     pub unsafe fn read_unchecked(&self, index: usize) -> Option<&T> {
         unsafe {
             return if let Some(ptr) = self.inner.get_raw(index).as_ref(){
@@ -717,13 +780,15 @@ impl<T: Debug> MutBorrowedTangled<'_, T> {
     }
 
     pub fn read(&'_ self, index: usize) -> RefHandle<'_, T> {
-        let (offset,rough) = self.inner.convert_index(index).unwrap();
-        //print!("offset {:?} rough {:?}", offset, rough);
-        let handle = self.get_handle(rough).unwrap();
-        let val = handle.get_element(index);
-        //println!("val {:?}", val);
-        //println!("handle {:?}", handle);
-        todo!()
+        let (offset ,rough) = self.inner.convert_index(index).unwrap_or_else(|| panic!("index out of bounds"));
+        let handle = self.get_handle(rough, Some(offset)).unwrap();
+        return handle
+    }
+    pub fn read_slice(&self, index: usize) -> RefHandle<'_, T>{
+        let len = self.inner.cached.len();
+        let index = index - len;
+        let (offset, rough_index) = self.inner.convert_index(index).unwrap();
+        self.get_handle(rough_index, None).unwrap()
     }
 
     pub fn write(&mut self, index: usize, val: T){
@@ -744,7 +809,7 @@ impl<T: Debug> MutBorrowedTangled<'_, T> {
     }
 
 
-    pub fn get_pointer_at_index(&self, index: usize) -> Option<InnerVec<T>>{
+    pub unsafe fn get_pointer_at_index(&self, index: usize) -> Option<InnerVec<T>>{
         let rough = self.inner.prefix_vec.partition_point(|&x| x < index + 1);
         return self.inner.pointers[rough]
     }
